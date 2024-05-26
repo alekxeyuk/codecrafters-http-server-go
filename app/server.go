@@ -9,14 +9,14 @@ import (
 
 // Router to map paths to handler functions
 type Router struct {
-	routes map[string]func(string) (int, string, string)
+	routes map[string]func(string, map[string]string) (int, string, string)
 }
 
 func NewRouter() *Router {
-	return &Router{routes: make(map[string]func(string) (int, string, string))}
+	return &Router{routes: make(map[string]func(string, map[string]string) (int, string, string))}
 }
 
-func (r *Router) HandleFunc(path string, handler func(string) (int, string, string)) {
+func (r *Router) HandleFunc(path string, handler func(string, map[string]string) (int, string, string)) {
 	r.routes[path] = handler
 }
 
@@ -31,6 +31,8 @@ func (r *Router) ServeHTTP(conn net.Conn, request string) {
 	}
 
 	path := lineFields[1]
+	headers := parseHeaders(parts[1:])
+
 	pathParts := strings.Split(path, "/")
 	if len(pathParts) < 2 {
 		return
@@ -42,17 +44,18 @@ func (r *Router) ServeHTTP(conn net.Conn, request string) {
 		return
 	}
 
-	statusCode, contentType, body := handler(path)
-	headers := []httpHeader{
+	statusCode, contentType, body := handler(path, headers)
+	headersToWrite := []httpHeader{
 		{"Content-Type", contentType},
 		{"Content-Length", fmt.Sprintf("%d", len(body))},
 	}
-	writeResponse(conn, statusCode, "OK", body, headers...)
+	writeResponse(conn, statusCode, "OK", body, headersToWrite...)
 }
 
 func main() {
 	router := NewRouter()
 	router.HandleFunc("/echo", echoHandler)
+	router.HandleFunc("/user-agent", userAgentHandler)
 
 	l, err := net.Listen("tcp", "0.0.0.0:4221")
 	if err != nil {
@@ -106,10 +109,32 @@ func writeResponse(conn net.Conn, statusCode int, statusReason, body string, hea
 	conn.Write([]byte(sb.String()))
 }
 
-func echoHandler(path string) (int, string, string) {
+func echoHandler(path string, _ map[string]string) (int, string, string) {
 	pathParts := strings.Split(path, "/")
 	if len(pathParts) == 3 {
 		return 200, "text/plain", pathParts[2]
 	}
 	return 404, "text/plain", "Not Found"
+}
+
+func userAgentHandler(path string, headers map[string]string) (int, string, string) {
+	userAgent, exists := headers["User-Agent"]
+	if !exists {
+		return 400, "text/plain", "User-Agent header not found"
+	}
+	return 200, "text/plain", userAgent
+}
+
+func parseHeaders(headerLines []string) map[string]string {
+	headers := make(map[string]string)
+	for _, line := range headerLines {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, ": ", 2)
+		if len(parts) == 2 {
+			headers[parts[0]] = parts[1]
+		}
+	}
+	return headers
 }
