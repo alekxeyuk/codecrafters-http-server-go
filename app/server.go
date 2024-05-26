@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
 	"net"
 	"os"
@@ -63,16 +65,16 @@ func (r *Router) ServeHTTP(conn net.Conn, request string) {
 	req := Request{path, headers, body}
 
 	res := handler(&req)
-	headersToWrite := []httpHeader{
-		{"Content-Type", res.contentType},
-		{"Content-Length", fmt.Sprintf("%d", len(res.body))},
+	headersToWrite := httpHeader{
+		"Content-Type":   res.contentType,
+		"Content-Length": fmt.Sprintf("%d", len(res.body)),
 	}
-	handleCompression(&req, &headersToWrite)
-	writeResponse(conn, res.statusCode, res.reason, res.body, headersToWrite...)
+	handleCompression(&req, &res, &headersToWrite)
+	writeResponse(conn, res.statusCode, res.reason, res.body, headersToWrite)
 }
 
-func handleCompression(r *Request, h *[]httpHeader) (bool, string) {
-	encoding, exists := r.headers["accept-encoding"]
+func handleCompression(rq *Request, rs *Response, h *httpHeader) (bool, string) {
+	encoding, exists := rq.headers["accept-encoding"]
 	if !exists {
 		return false, ""
 	}
@@ -81,7 +83,15 @@ func handleCompression(r *Request, h *[]httpHeader) (bool, string) {
 	if !gzipExists {
 		return false, ""
 	}
-	*h = append(*h, httpHeader{"Content-Encoding", "gzip"})
+
+	var b bytes.Buffer
+	gz := gzip.NewWriter(&b)
+	gz.Write([]byte(rs.body))
+	gz.Close()
+	rs.body = b.String()
+
+	(*h)["Content-Length"] = fmt.Sprintf("%d", len(b.Bytes()))
+	(*h)["Content-Encoding"] = "gzip"
 	return true, ""
 }
 
@@ -124,13 +134,14 @@ func handleConnection(conn net.Conn, router *Router) {
 	router.ServeHTTP(conn, request)
 }
 
-type httpHeader struct {
-	name  string
-	value string
-}
+type httpHeader map[string]string
 
 func (h *httpHeader) String() string {
-	return fmt.Sprintf("%s: %s\r\n", h.name, h.value)
+	sb := new(strings.Builder)
+	for k, v := range *h {
+		sb.WriteString(fmt.Sprintf("%s: %s\n", k, v))
+	}
+	return sb.String()
 }
 
 func writeResponse(conn net.Conn, statusCode int, statusReason, body string, headers ...httpHeader) {
