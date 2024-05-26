@@ -35,15 +35,21 @@ func (s *httpStatus) String() string {
 	return fmt.Sprintf("%s %d %s", s.version, s.code, s.reason)
 }
 
-type httpHeader []struct {
+type httpHeader struct {
 	name  string
 	value string
 }
 
+type httpHeaders []httpHeader
+
 func (h *httpHeader) String() string {
+	return fmt.Sprintf("%s: %s\r\n", h.name, h.value)
+}
+
+func (h *httpHeaders) String() string {
 	sb := new(strings.Builder)
 	for _, v := range *h {
-		sb.WriteString(fmt.Sprintf("%s: %s\r\n", v.name, v.value))
+		sb.WriteString(v.String())
 	}
 	return sb.String()
 }
@@ -57,24 +63,37 @@ func handleConnection(conn net.Conn) {
 		reason:  "OK",
 	}
 
+	header := httpHeaders{}
+
+	var body string
+
 	buf := make([]byte, 1024)
 	conn.Read(buf)
 	parts := strings.Split(string(buf), "\r\n")
 	requestSize := len(parts)
 	if requestSize > 1 {
 		lineFields := strings.Fields(parts[0])
-		if lineFields[1] != "/" {
-			responseStatus.code = 404
-			responseStatus.reason = "Not Found"
-		}
-	}
 
-	header := httpHeader{}
+		pathSplit := strings.Split(lineFields[1], "/")
+
+		if len(pathSplit) == 3 && pathSplit[1] == "echo" {
+			header = append(header, httpHeader{"Content-Type", "text/plain"})
+			body = pathSplit[2]
+			header = append(header, httpHeader{"Content-Length", fmt.Sprintf("%d", len([]byte(body)))})
+		}
+
+		//if lineFields[1] = "/" {
+		//	responseStatus.code = 404
+		//	responseStatus.reason = "Not Found"
+		//}
+	}
 
 	sb := strings.Builder{}
 	sb.WriteString(responseStatus.String())
 	sb.WriteString("\r\n")
 	sb.WriteString(header.String())
+	sb.WriteString("\r\n")
+	sb.WriteString(body)
 	sb.WriteString("\r\n")
 
 	conn.Write([]byte(sb.String()))
