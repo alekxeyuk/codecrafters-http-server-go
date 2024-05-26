@@ -7,6 +7,12 @@ import (
 	"strings"
 )
 
+type Request struct {
+	path    string
+	headers map[string]string
+	body    string
+}
+
 type Response struct {
 	statusCode  int
 	reason      string
@@ -14,19 +20,17 @@ type Response struct {
 	body        string
 }
 
-type Path string
-
 // Router to map paths to handler functions
 type Router struct {
-	routes map[string]func(string, map[string]string) Response
+	routes map[string]func(*Request) Response
 }
 
 func NewRouter() *Router {
-	return &Router{routes: make(map[string]func(string, map[string]string) Response)}
+	return &Router{routes: make(map[string]func(*Request) Response)}
 }
 
-func (r *Router) HandleFunc(path string, handler func(string, map[string]string) Response) {
-	r.routes[path] = handler
+func (r *Router) HandleFunc(method string, path string, handler func(*Request) Response) {
+	r.routes[method+path] = handler
 }
 
 func (r *Router) ServeHTTP(conn net.Conn, request string) {
@@ -39,21 +43,23 @@ func (r *Router) ServeHTTP(conn net.Conn, request string) {
 		return
 	}
 
+	method := lineFields[0]
 	path := lineFields[1]
 	headers := parseHeaders(parts[1:])
+	body := parts[len(parts)-1]
 
 	pathParts := strings.Split(path, "/")
 	if len(pathParts) < 2 {
 		return
 	}
 
-	handler, exists := r.routes["/"+pathParts[1]]
+	handler, exists := r.routes[method+"/"+pathParts[1]]
 	if !exists {
 		writeResponse(conn, 404, "Not Found", "")
 		return
 	}
 
-	res := handler(path, headers)
+	res := handler(&Request{path, headers, body})
 	headersToWrite := []httpHeader{
 		{"Content-Type", res.contentType},
 		{"Content-Length", fmt.Sprintf("%d", len(res.body))},
@@ -63,10 +69,11 @@ func (r *Router) ServeHTTP(conn net.Conn, request string) {
 
 func main() {
 	router := NewRouter()
-	router.HandleFunc("/", mainPageHandler)
-	router.HandleFunc("/echo", echoHandler)
-	router.HandleFunc("/user-agent", userAgentHandler)
-	router.HandleFunc("/files", filesHandler)
+	router.HandleFunc("GET", "/", mainPageHandler)
+	router.HandleFunc("GET", "/echo", echoHandler)
+	router.HandleFunc("GET", "/user-agent", userAgentHandler)
+	router.HandleFunc("GET", "/files", filesGetHandler)
+	router.HandleFunc("POST", "/files", filesPostHandler)
 
 	l, err := net.Listen("tcp", "0.0.0.0:4221")
 	if err != nil {
@@ -134,16 +141,16 @@ func parseHeaders(headerLines []string) map[string]string {
 	return headers
 }
 
-func echoHandler(path string, _ map[string]string) Response {
-	pathParts := strings.Split(path, "/")
+func echoHandler(r *Request) Response {
+	pathParts := strings.Split(r.path, "/")
 	if len(pathParts) == 3 {
 		return Response{200, "OK", "text/plain", pathParts[2]}
 	}
 	return Response{404, "Not Found", "text/plain", "Not Found"}
 }
 
-func filesHandler(path string, _ map[string]string) Response {
-	pathParts := strings.Split(path, "/")
+func filesGetHandler(r *Request) Response {
+	pathParts := strings.Split(r.path, "/")
 	if len(pathParts) == 3 {
 		var dirPath string
 		if len(os.Args) < 3 {
@@ -161,14 +168,30 @@ func filesHandler(path string, _ map[string]string) Response {
 	return Response{404, "Not Found", "text/plain", "Not Found"}
 }
 
-func userAgentHandler(path string, headers map[string]string) Response {
-	userAgent, exists := headers["User-Agent"]
+func filesPostHandler(r *Request) Response {
+	pathParts := strings.Split(r.path, "/")
+	if len(pathParts) == 3 {
+		var dirPath string
+		if len(os.Args) < 3 {
+			dirPath = ""
+		} else {
+			dirPath = os.Args[2]
+		}
+		fileName := pathParts[2]
+		os.WriteFile(dirPath+fileName, []byte(r.body), 0644)
+		return Response{201, "OK", "text/plain", "saved"}
+	}
+	return Response{404, "Not Found", "text/plain", "Not Found"}
+}
+
+func userAgentHandler(r *Request) Response {
+	userAgent, exists := r.headers["User-Agent"]
 	if !exists {
 		return Response{400, "Not Found", "text/plain", "User-Agent header not found"}
 	}
 	return Response{200, "OK", "text/plain", userAgent}
 }
 
-func mainPageHandler(path string, headers map[string]string) Response {
+func mainPageHandler(_ *Request) Response {
 	return Response{200, "OK", "text/html", "<h1>Hello World</h1>"}
 }
