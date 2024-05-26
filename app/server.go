@@ -50,15 +50,29 @@ func (h *httpHeader) String() string {
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
-	status := httpStatus{
+
+	responseStatus := httpStatus{
 		version: "HTTP/1.1",
 		code:    200,
 		reason:  "OK",
 	}
+
+	buf := make([]byte, 1024)
+	conn.Read(buf)
+	parts := strings.Split(string(buf), "\r\n")
+	requestSize := len(parts)
+	if requestSize > 1 {
+		lineFields := strings.Fields(parts[0])
+		if lineFields[1] != "/" {
+			responseStatus.code = 404
+			responseStatus.reason = "Not Found"
+		}
+	}
+
 	header := httpHeader{}
 
 	sb := strings.Builder{}
-	sb.WriteString(status.String())
+	sb.WriteString(responseStatus.String())
 	sb.WriteString("\r\n")
 	sb.WriteString(header.String())
 	sb.WriteString("\r\n")
