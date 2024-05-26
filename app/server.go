@@ -54,6 +54,7 @@ func (r *Router) ServeHTTP(conn net.Conn, request string) {
 
 func main() {
 	router := NewRouter()
+	router.HandleFunc("/", mainPageHandler)
 	router.HandleFunc("/echo", echoHandler)
 	router.HandleFunc("/user-agent", userAgentHandler)
 
@@ -137,4 +138,8 @@ func parseHeaders(headerLines []string) map[string]string {
 		}
 	}
 	return headers
+}
+
+func mainPageHandler(path string, headers map[string]string) (int, string, string) {
+	return 200, "text/plain", ""
 }
