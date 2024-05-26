@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -72,7 +73,12 @@ func (r *Router) ServeHTTP(conn net.Conn, request string) {
 
 func handleCompression(r *Request, h *[]httpHeader) (bool, string) {
 	encoding, exists := r.headers["accept-encoding"]
-	if !exists || strings.ToLower(encoding) != "gzip" {
+	if !exists {
+		return false, ""
+	}
+	encodings := strings.Fields(strings.Replace(encoding, ",", "", -1))
+	gzipExists := slices.Contains(encodings, "gzip")
+	if !gzipExists {
 		return false, ""
 	}
 	*h = append(*h, httpHeader{"Content-Encoding", "gzip"})
