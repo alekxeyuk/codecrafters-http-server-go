@@ -59,12 +59,24 @@ func (r *Router) ServeHTTP(conn net.Conn, request string) {
 		return
 	}
 
-	res := handler(&Request{path, headers, body})
+	req := Request{path, headers, body}
+
+	res := handler(&req)
 	headersToWrite := []httpHeader{
 		{"Content-Type", res.contentType},
 		{"Content-Length", fmt.Sprintf("%d", len(res.body))},
 	}
+	handleCompression(&req, &headersToWrite)
 	writeResponse(conn, res.statusCode, res.reason, res.body, headersToWrite...)
+}
+
+func handleCompression(r *Request, h *[]httpHeader) (bool, string) {
+	encoding, exists := r.headers["accept-encoding"]
+	if !exists || strings.ToLower(encoding) != "gzip" {
+		return false, ""
+	}
+	*h = append(*h, httpHeader{"Content-Encoding", "gzip"})
+	return true, ""
 }
 
 func main() {
@@ -135,7 +147,7 @@ func parseHeaders(headerLines []string) map[string]string {
 		}
 		parts := strings.SplitN(line, ": ", 2)
 		if len(parts) == 2 {
-			headers[parts[0]] = parts[1]
+			headers[strings.ToLower(parts[0])] = strings.ToLower(parts[1])
 		}
 	}
 	return headers
@@ -185,7 +197,7 @@ func filesPostHandler(r *Request) Response {
 }
 
 func userAgentHandler(r *Request) Response {
-	userAgent, exists := r.headers["User-Agent"]
+	userAgent, exists := r.headers["user-agent"]
 	if !exists {
 		return Response{400, "Not Found", "text/plain", "User-Agent header not found"}
 	}
