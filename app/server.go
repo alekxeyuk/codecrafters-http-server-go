@@ -80,12 +80,10 @@ func handleConnection(conn net.Conn) {
 			header = append(header, httpHeader{"Content-Type", "text/plain"})
 			body = pathSplit[2]
 			header = append(header, httpHeader{"Content-Length", fmt.Sprintf("%d", len([]byte(body)))})
+		} else if lineFields[1] != "/" {
+			responseStatus.code = 404
+			responseStatus.reason = "Not Found"
 		}
-
-		//if lineFields[1] = "/" {
-		//	responseStatus.code = 404
-		//	responseStatus.reason = "Not Found"
-		//}
 	}
 
 	sb := strings.Builder{}
