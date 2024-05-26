@@ -7,16 +7,24 @@ import (
 	"strings"
 )
 
+type Response struct {
+	statusCode  int
+	contentType string
+	body        string
+}
+
+type Path string
+
 // Router to map paths to handler functions
 type Router struct {
-	routes map[string]func(string, map[string]string) (int, string, string)
+	routes map[string]func(string, map[string]string) Response
 }
 
 func NewRouter() *Router {
-	return &Router{routes: make(map[string]func(string, map[string]string) (int, string, string))}
+	return &Router{routes: make(map[string]func(string, map[string]string) Response)}
 }
 
-func (r *Router) HandleFunc(path string, handler func(string, map[string]string) (int, string, string)) {
+func (r *Router) HandleFunc(path string, handler func(string, map[string]string) Response) {
 	r.routes[path] = handler
 }
 
@@ -44,12 +52,12 @@ func (r *Router) ServeHTTP(conn net.Conn, request string) {
 		return
 	}
 
-	statusCode, contentType, body := handler(path, headers)
+	res := handler(path, headers)
 	headersToWrite := []httpHeader{
-		{"Content-Type", contentType},
-		{"Content-Length", fmt.Sprintf("%d", len(body))},
+		{"Content-Type", res.contentType},
+		{"Content-Length", fmt.Sprintf("%d", len(res.body))},
 	}
-	writeResponse(conn, statusCode, "OK", body, headersToWrite...)
+	writeResponse(conn, res.statusCode, "OK", res.body, headersToWrite...)
 }
 
 func main() {
@@ -57,6 +65,7 @@ func main() {
 	router.HandleFunc("/", mainPageHandler)
 	router.HandleFunc("/echo", echoHandler)
 	router.HandleFunc("/user-agent", userAgentHandler)
+	router.HandleFunc("/files", filesHandler)
 
 	l, err := net.Listen("tcp", "0.0.0.0:4221")
 	if err != nil {
@@ -110,22 +119,6 @@ func writeResponse(conn net.Conn, statusCode int, statusReason, body string, hea
 	conn.Write([]byte(sb.String()))
 }
 
-func echoHandler(path string, _ map[string]string) (int, string, string) {
-	pathParts := strings.Split(path, "/")
-	if len(pathParts) == 3 {
-		return 200, "text/plain", pathParts[2]
-	}
-	return 404, "text/plain", "Not Found"
-}
-
-func userAgentHandler(path string, headers map[string]string) (int, string, string) {
-	userAgent, exists := headers["User-Agent"]
-	if !exists {
-		return 400, "text/plain", "User-Agent header not found"
-	}
-	return 200, "text/plain", userAgent
-}
-
 func parseHeaders(headerLines []string) map[string]string {
 	headers := make(map[string]string)
 	for _, line := range headerLines {
@@ -140,6 +133,36 @@ func parseHeaders(headerLines []string) map[string]string {
 	return headers
 }
 
-func mainPageHandler(path string, headers map[string]string) (int, string, string) {
-	return 200, "text/plain", ""
+func echoHandler(path string, _ map[string]string) Response {
+	pathParts := strings.Split(path, "/")
+	if len(pathParts) == 3 {
+		return Response{200, "text/plain", pathParts[2]}
+	}
+	return Response{404, "text/plain", "Not Found"}
+}
+
+func filesHandler(path string, _ map[string]string) Response {
+	pathParts := strings.Split(path, "/")
+	if len(pathParts) == 3 {
+		dirPath := os.Args[2]
+		fileName := pathParts[2]
+		data, err := os.ReadFile(dirPath + fileName)
+		if err != nil {
+			return Response{404, "text/plain", err.Error()}
+		}
+		return Response{200, "application/octet-stream", string(data)}
+	}
+	return Response{404, "text/plain", "Not Found"}
+}
+
+func userAgentHandler(path string, headers map[string]string) Response {
+	userAgent, exists := headers["User-Agent"]
+	if !exists {
+		return Response{400, "text/plain", "User-Agent header not found"}
+	}
+	return Response{200, "text/plain", userAgent}
+}
+
+func mainPageHandler(path string, headers map[string]string) Response {
+	return Response{200, "text/html", "<h1>Hello World</h1>"}
 }
