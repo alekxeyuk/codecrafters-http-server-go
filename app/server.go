@@ -58,14 +58,14 @@ func (r *Router) ServeHTTP(conn net.Conn, request string) {
 
 	handler, exists := r.routes[method+"/"+pathParts[1]]
 	if !exists {
-		writeResponse(conn, 404, "Not Found", "")
+		writeResponse(conn, 404, "Not Found", "", httpHeaders{})
 		return
 	}
 
 	req := Request{path, headers, body}
 
 	res := handler(&req)
-	headersToWrite := httpHeader{
+	headersToWrite := httpHeaders{
 		"Content-Type":   res.contentType,
 		"Content-Length": fmt.Sprintf("%d", len(res.body)),
 	}
@@ -73,7 +73,7 @@ func (r *Router) ServeHTTP(conn net.Conn, request string) {
 	writeResponse(conn, res.statusCode, res.reason, res.body, headersToWrite)
 }
 
-func handleCompression(rq *Request, rs *Response, h *httpHeader) (bool, string) {
+func handleCompression(rq *Request, rs *Response, h *httpHeaders) (bool, string) {
 	encoding, exists := rq.headers["accept-encoding"]
 	if !exists {
 		return false, ""
@@ -134,22 +134,20 @@ func handleConnection(conn net.Conn, router *Router) {
 	router.ServeHTTP(conn, request)
 }
 
-type httpHeader map[string]string
+type httpHeaders map[string]string
 
-func (h *httpHeader) String() string {
+func (h *httpHeaders) String() string {
 	sb := new(strings.Builder)
 	for k, v := range *h {
-		sb.WriteString(fmt.Sprintf("%s: %s\n", k, v))
+		sb.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
 	}
 	return sb.String()
 }
 
-func writeResponse(conn net.Conn, statusCode int, statusReason, body string, headers ...httpHeader) {
+func writeResponse(conn net.Conn, statusCode int, statusReason, body string, headers httpHeaders) {
 	sb := strings.Builder{}
 	sb.WriteString(fmt.Sprintf("HTTP/1.1 %d %s\r\n", statusCode, statusReason))
-	for _, header := range headers {
-		sb.WriteString(header.String())
-	}
+	sb.WriteString(headers.String())
 	sb.WriteString("\r\n")
 	sb.WriteString(body)
 	sb.WriteString("\r\n")
