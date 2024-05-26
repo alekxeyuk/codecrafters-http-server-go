@@ -179,7 +179,7 @@ func filesPostHandler(r *Request) Response {
 		}
 		fileName := pathParts[2]
 		os.WriteFile(dirPath+fileName, []byte(r.body), 0644)
-		return Response{201, "OK", "text/plain", "saved"}
+		return Response{201, "Created", "text/plain", "saved"}
 	}
 	return Response{404, "Not Found", "text/plain", "Not Found"}
 }
