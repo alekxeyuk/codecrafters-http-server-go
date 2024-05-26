@@ -9,6 +9,7 @@ import (
 
 type Response struct {
 	statusCode  int
+	reason      string
 	contentType string
 	body        string
 }
@@ -57,7 +58,7 @@ func (r *Router) ServeHTTP(conn net.Conn, request string) {
 		{"Content-Type", res.contentType},
 		{"Content-Length", fmt.Sprintf("%d", len(res.body))},
 	}
-	writeResponse(conn, res.statusCode, "OK", res.body, headersToWrite...)
+	writeResponse(conn, res.statusCode, res.reason, res.body, headersToWrite...)
 }
 
 func main() {
@@ -136,33 +137,38 @@ func parseHeaders(headerLines []string) map[string]string {
 func echoHandler(path string, _ map[string]string) Response {
 	pathParts := strings.Split(path, "/")
 	if len(pathParts) == 3 {
-		return Response{200, "text/plain", pathParts[2]}
+		return Response{200, "OK", "text/plain", pathParts[2]}
 	}
-	return Response{404, "text/plain", "Not Found"}
+	return Response{404, "Not Found", "text/plain", "Not Found"}
 }
 
 func filesHandler(path string, _ map[string]string) Response {
 	pathParts := strings.Split(path, "/")
 	if len(pathParts) == 3 {
-		dirPath := os.Args[2]
+		var dirPath string
+		if len(os.Args) < 3 {
+			dirPath = ""
+		} else {
+			dirPath = os.Args[2]
+		}
 		fileName := pathParts[2]
 		data, err := os.ReadFile(dirPath + fileName)
 		if err != nil {
-			return Response{404, "text/plain", err.Error()}
+			return Response{404, "Not Found", "text/plain", err.Error()}
 		}
-		return Response{200, "application/octet-stream", string(data)}
+		return Response{200, "OK", "application/octet-stream", string(data)}
 	}
-	return Response{404, "text/plain", "Not Found"}
+	return Response{404, "Not Found", "text/plain", "Not Found"}
 }
 
 func userAgentHandler(path string, headers map[string]string) Response {
 	userAgent, exists := headers["User-Agent"]
 	if !exists {
-		return Response{400, "text/plain", "User-Agent header not found"}
+		return Response{400, "Not Found", "text/plain", "User-Agent header not found"}
 	}
-	return Response{200, "text/plain", userAgent}
+	return Response{200, "OK", "text/plain", userAgent}
 }
 
 func mainPageHandler(path string, headers map[string]string) Response {
-	return Response{200, "text/html", "<h1>Hello World</h1>"}
+	return Response{200, "OK", "text/html", "<h1>Hello World</h1>"}
 }
